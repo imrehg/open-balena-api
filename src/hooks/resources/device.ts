@@ -126,7 +126,8 @@ sbvrUtils.addPureHook('POST', 'resin', 'device', {
 
 sbvrUtils.addPureHook('POST', 'resin', 'device', {
 	POSTPARSE: args => {
-		const { request } = args;
+		const { request, api } = args;
+
 		const waitPromises = [];
 
 		// Check for extra whitespace characters
@@ -141,24 +142,52 @@ sbvrUtils.addPureHook('POST', 'resin', 'device', {
 		// Keep the app ID for later -- we'll need it in the POSTRUN hook
 		request.custom.appId = request.values.belongs_to__application;
 
-		// transform to canonical slug in case the UI and API are out of sync
-		waitPromises.push(
-			deviceTypes
-				.normalizeDeviceType(request.values.device_type)
-				.then(deviceType => {
-					request.values.device_type = deviceType;
-					request.values.device_name =
-						request.values.device_name || haikuName.generate();
-					request.values.uuid =
-						request.values.uuid || crypto.pseudoRandomBytes(31).toString('hex');
-
-					if (!/^[a-f0-9]{32}([a-f0-9]{30})?$/.test(request.values.uuid)) {
-						throw new BadRequestError(
-							'Device UUID must be a 32 or 62 character long lower case hex string.',
-						);
+		let resolveDT;
+		if (
+			request.values.device_type != null &&
+			request.values.is_of__device_type == null
+		) {
+			// translate device_type to is_for__device_type
+			resolveDT = deviceTypes
+				.getDeviceTypeIdBySlug(request.values.device_type, api)
+				.then(dt => {
+					if (dt) {
+						request.values.is_of__device_type = dt.id;
+						return;
 					}
+					throw new Error('Invalid device type value');
+				});
+		}
+
+		waitPromises.push(
+			Promise.resolve(resolveDT)
+				.then(() => {
+					return api.get({
+						resource: 'device_type',
+						id: request.values.is_of__device_type,
+						options: {
+							$select: ['slug'],
+						},
+					});
+				})
+				.then((dt: { slug: string }) => {
+					if (!dt) {
+						throw new deviceTypes.UnknownDeviceTypeError('');
+					}
+					return deviceTypes.findBySlug(dt.slug, api);
 				}),
 		);
+
+		request.values.device_name =
+			request.values.device_name || haikuName.generate();
+		request.values.uuid =
+			request.values.uuid || crypto.pseudoRandomBytes(31).toString('hex');
+
+		if (!/^[a-f0-9]{32}([a-f0-9]{30})?$/.test(request.values.uuid)) {
+			throw new BadRequestError(
+				'Device UUID must be a 32 or 62 character long lower case hex string.',
+			);
+		}
 		return Promise.all(waitPromises);
 	},
 	POSTRUN: ({ request, api, tx, result: deviceId }) => {

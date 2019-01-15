@@ -22,7 +22,12 @@ const getApp = (req: Request): Promise<AnyObject> =>
 			id: req.param('appId'),
 			passthrough: { req },
 			options: {
-				$select: ['id', 'app_name', 'device_type'],
+				$select: ['id', 'app_name'],
+				$expand: {
+					is_for__device_type: {
+						$select: ['slug'],
+					},
+				},
 			},
 		})
 		.then((app: AnyObject) => {
@@ -49,16 +54,20 @@ export const downloadImageConfig: RequestHandler = (req, res) => {
 		return;
 	}
 
+	const api = resinApi.clone({ passthrough: { req } });
+
 	return getApp(req)
+		.tap(app => console.error(`Found app! ${JSON.stringify(app)}`))
 		.then(app =>
-			findBySlug(deviceTypeSlug || app.device_type).then(deviceType =>
-				generateConfig(req, app, deviceType, osVersion),
+			findBySlug(deviceTypeSlug || app.is_for__device_type[0].slug, api).then(
+				deviceType => generateConfig(req, app, deviceType, osVersion),
 			),
 		)
 		.then(config => {
 			res.json(config);
 		})
 		.catch(UnauthorizedError, err => {
+			console.error(`Failed ${err.message}`);
 			res.status(404).send(err.message);
 		})
 		.catch(err => {

@@ -102,9 +102,6 @@ Term: date
 Term: device name
 	Concept Type: Short Text (Type)
 
-Term: device type
-	Concept Type: Short Text (Type)
-
 Term: dockerfile
 	Concept Type: Text (Type)
 
@@ -246,6 +243,7 @@ Term: application type
 Term: config
 Term: image
 Term: service instance
+Term: device type
 
 Term: application
 	Concept Type: actor (Auth)
@@ -334,7 +332,6 @@ Fact type: image is part of release
 Fact type: user (Auth) has email
 	Necessity: each user (Auth) has at most one email.
 
-
 -- application type
 
 Fact type: application type has name (Auth)
@@ -355,7 +352,6 @@ Fact type: application type has description (Auth)
 Fact type: application type has maximum device count
 	Necessity: each application type has at most one maximum device count
 
-
 -- application
 
 Fact type: application has app name
@@ -364,8 +360,8 @@ Fact type: application has app name
 Fact type: application has slug
 	Necessity: each application has exactly one slug
 	Necessity: each slug is of exactly one application
-Fact type: application has device type
-	Necessity: each application has exactly one device type
+Fact type: application is for device type
+	Necessity: each application is for exactly one device type
 Fact type: application has VPN host
 	Necessity: each application has exactly one VPN host.
 Fact type: application has VPN port
@@ -377,7 +373,6 @@ Fact type: application1 depends on application2
 	Necessity: each application1 depends on at most one application2.
 Fact type: application has application type
 	Necessity: each application has exactly one application type.
-
 
 -- service instance
 
@@ -400,8 +395,9 @@ Fact type: device has device name
 	Necessity: each device has at most one device name.
 Fact type: device has note
 	Necessity: each device has at most one note.
-Fact type: device has device type
-	Necessity: each device has exactly one device type.
+Fact type: device is of device type
+	Synonymous Form: device type describes device
+	Necessity: each device is of exactly one device type.
 Fact type: device belongs to application
 	Synonymous Form: application owns device
 	Necessity: each device belongs to at most one application.
@@ -463,6 +459,14 @@ Fact type: application config variable has value
 Fact type: device config variable has value
 	Necessity: each device config variable has exactly one value.
 
+-- device type
+
+Fact type: device type has slug
+	Necessity: each device type has exactly one slug
+	Necessity: each slug is of exactly one device type
+
+Fact type: device type has name (Auth)
+	Necessity: each device type has exactly one name (Auth)
 
 -- release
 

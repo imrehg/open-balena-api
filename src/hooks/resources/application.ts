@@ -68,7 +68,7 @@ sbvrUtils.addPureHook('POST', 'resin', 'application', {
 
 sbvrUtils.addPureHook('POST', 'resin', 'application', {
 	POSTPARSE: args => {
-		const { req, request } = args;
+		const { req, request, api } = args;
 		const appName = request.values.app_name;
 
 		if (request.values.application_type == null) {
@@ -79,10 +79,49 @@ sbvrUtils.addPureHook('POST', 'resin', 'application', {
 			throw new Error('App name may only contain [a-zA-Z0-9_-].');
 		}
 
+		const promises: AnyObject[] = [];
+		if (
+			request.values.device_type != null &&
+			request.values.is_for__device_type == null
+		) {
+			// translate device_type to is_for__device_type
+			promises.push(
+				deviceTypes
+					.getDeviceTypeIdBySlug(request.values.device_type, api)
+					.then(dt => {
+						if (dt) {
+							request.values.is_for__device_type = dt.id;
+							return;
+						}
+						throw new Error('Invalid device type value');
+					}),
+			);
+		}
+
+		const resolveDeviceTypePromise = Promise.all(promises)
+			.then(() => {
+				if (!request.values.is_for__device_type) {
+					throw new Error('No device type specified for application');
+				}
+			})
+			.then(() => {
+				return api.get({
+					resource: 'device_type',
+					id: request.values.is_for__device_type,
+					options: {
+						$select: ['slug'],
+					},
+				});
+			})
+			.then((dt: { slug: string }) => {
+				if (!dt) {
+					throw new deviceTypes.UnknownDeviceTypeError('');
+				}
+				return deviceTypes.findBySlug(dt.slug, api);
+			});
+
 		return Promise.all([
-			deviceTypes
-				.normalizeDeviceType(request.values.device_type)
-				.then(deviceType => (request.values.device_type = deviceType)),
+			resolveDeviceTypePromise,
 			checkDependentApplication(args),
 		])
 			.then(() => {

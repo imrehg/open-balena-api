@@ -15,11 +15,9 @@ async function onInitModel() {
 	const insert = _.cloneDeep(appTypes.Default);
 	const filter = { slug: insert.slug };
 	delete insert.slug;
-	return db
-		.transaction(tx =>
-			updateOrInsertModel('application_type', filter, insert, tx),
-		)
-		.return();
+	await db.transaction(tx =>
+		updateOrInsertModel('application_type', filter, insert, tx),
+	);
 }
 
 async function onInitHooks() {

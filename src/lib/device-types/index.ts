@@ -4,7 +4,7 @@ import * as _ from 'lodash';
 import { InternalRequestError } from '@resin/pinejs/out/sbvr-api/errors';
 import * as deviceTypesLib from '@resin.io/device-types';
 import * as semver from 'resin-semver';
-import { sbvrUtils } from '../../platform';
+import { sbvrUtils, PinejsClient } from '../../platform';
 import { captureException } from '../../platform/errors';
 import {
 	getCompressedSize,
@@ -12,6 +12,7 @@ import {
 	getIsIgnored,
 } from './build-info-facade';
 import { getImageKey, IMAGE_STORAGE_PREFIX, listFolders } from './storage';
+import { db, updateOrInsertModel } from '../../platform';
 
 export const { BadRequestError, NotFoundError } = sbvrUtils;
 
@@ -48,6 +49,14 @@ interface DeviceTypeInfo {
 const SPECIAL_SLUGS = ['edge'];
 const RETRY_DELAY = 2000; // ms
 const DEVICE_TYPES_CACHE_EXPIRATION = 5 * 60 * 1000; // 5 mins
+
+const syncSettings: { map: Dictionary<string> } = {
+	map: {},
+};
+
+export function setSyncMap(map: Dictionary<string>) {
+	syncSettings.map = map;
+}
 
 function sortBuildIds(ids: string[]): string[] {
 	return arraySort(
@@ -187,6 +196,29 @@ function updateDeviceTypesCache(
 	});
 }
 
+export function syncDataModel(
+	types: Dictionary<DeviceTypeInfo>,
+	propertyMap: Dictionary<string>,
+) {
+	return db.transaction(tx => {
+		return Promise.each(_.map(types), deviceTypeInfo => {
+			const deviceType = deviceTypeInfo.latest.deviceType;
+			const body: AnyObject = {};
+			_.forEach(propertyMap, (target, source) => {
+				body[target] = (deviceType as AnyObject)[source];
+			});
+			return updateOrInsertModel(
+				'device_type',
+				{
+					slug: deviceType.slug,
+				},
+				body,
+				tx,
+			);
+		});
+	});
+}
+
 function fetchDeviceTypesAndReschedule(): Promise<Dictionary<DeviceTypeInfo>> {
 	const promise = fetchDeviceTypes()
 		.tap(() => {
@@ -214,7 +246,9 @@ function fetchDeviceTypesAndReschedule(): Promise<Dictionary<DeviceTypeInfo>> {
 		updateDeviceTypesCache(promise);
 	}
 
-	return promise;
+	return promise.tap(deviceTypeInfos => {
+		return syncDataModel(deviceTypeInfos, syncSettings.map);
+	});
 }
 
 function getDeviceTypes(): Promise<Dictionary<DeviceTypeInfo>> {
@@ -226,18 +260,58 @@ function getDeviceTypes(): Promise<Dictionary<DeviceTypeInfo>> {
 	return fetchDeviceTypesAndReschedule();
 }
 
+export const getAccessibleSlugs = (
+	api: PinejsClient,
+	slugs?: string[],
+): Promise<string[]> => {
+	const options: AnyObject = {
+		$select: ['slug'],
+	};
+	if (slugs && slugs.length > 1) {
+		options['$filter'] = {
+			$in: { slug: slugs },
+		};
+	} else if (slugs && slugs.length == 1) {
+		options['$filter'] = {
+			slug: slugs[0],
+		};
+	}
+	return api
+		.get({
+			resource: 'device_type',
+			options,
+		})
+		.then((accessibleDeviceTypes: { slug: string }[]) => {
+			return _.map(accessibleDeviceTypes, 'slug');
+		});
+};
+
 export const findDeviceTypeInfoBySlug = (
 	slug: string,
+	api: PinejsClient,
 ): Promise<DeviceTypeInfo> =>
-	getDeviceTypes().then(deviceTypeInfos => {
-		// the slug can be an alias,
-		// since the Dictionary also has props for the aliases
-		const deviceTypeInfo = deviceTypeInfos[slug];
-		if (!deviceTypeInfo || !deviceTypeInfo.latest) {
+	getAccessibleSlugs(api, [slug])
+		.then((accessibleDeviceTypes: string[]) => {
+			if (accessibleDeviceTypes.length > 0) {
+				if (_.includes(accessibleDeviceTypes, slug)) {
+					// We can access the device type slug
+					return;
+				}
+			}
+			// We cannot access the device type
 			throw new UnknownDeviceTypeError(slug);
-		}
-		return deviceTypeInfos[slug];
-	});
+		})
+		.then(getDeviceTypes)
+		.then(deviceTypeInfos => {
+			// the slug can be an alias,
+			// since the Dictionary also has props for the aliases
+			const deviceTypeInfo = deviceTypeInfos[slug];
+			if (!deviceTypeInfo || !deviceTypeInfo.latest) {
+				throw new UnknownDeviceTypeError(slug);
+			}
+			return deviceTypeInfos[slug];
+		});
+// TODO: filter device to be accessible for req
 
 export const validateSlug = (slug?: string) => {
 	if (slug == null || !/^[\w-]+$/.test(slug)) {
@@ -246,21 +320,32 @@ export const validateSlug = (slug?: string) => {
 	return slug;
 };
 
-export const deviceTypes = (): Promise<DeviceType[]> => {
-	return getDeviceTypes().then(deviceTypesInfos => {
-		// exclude aliases
-		return _(deviceTypesInfos)
-			.filter(
-				(deviceTypesInfo, slug) =>
-					deviceTypesInfo.latest.deviceType.slug === slug,
-			)
-			.map(deviceTypesInfo => deviceTypesInfo.latest.deviceType)
-			.value();
-	});
+export const deviceTypes = (api: PinejsClient): Promise<DeviceType[]> => {
+	return getDeviceTypes()
+		.then(deviceTypesInfos => {
+			// exclude aliases
+			return _(deviceTypesInfos)
+				.filter(
+					(deviceTypesInfo, slug) =>
+						deviceTypesInfo.latest.deviceType.slug === slug,
+				)
+				.map(deviceTypesInfo => deviceTypesInfo.latest.deviceType)
+				.value();
+		})
+		.then(deviceTypes => {
+			return getAccessibleSlugs(api).then((accessibleDeviceTypes: string[]) => {
+				return _.filter(deviceTypes, o => {
+					return _.includes(accessibleDeviceTypes, o.slug);
+				});
+			});
+		});
 };
 
-export const findBySlug = (slug: string): Promise<DeviceType> =>
-	deviceTypes()
+export const findBySlug = (
+	slug: string,
+	api: PinejsClient,
+): Promise<DeviceType> =>
+	deviceTypes(api)
 		.then(deviceTypes => deviceTypesLib.findBySlug(deviceTypes, slug))
 		.then(deviceType => {
 			if (deviceType == null) {
@@ -271,12 +356,15 @@ export const findBySlug = (slug: string): Promise<DeviceType> =>
 			return deviceType;
 		});
 
-export const normalizeDeviceType = (slug: string): Promise<string> => {
+export const normalizeDeviceType = (
+	slug: string,
+	api: PinejsClient,
+): Promise<string> => {
 	if (SPECIAL_SLUGS.includes(slug)) {
 		return Promise.resolve(slug);
 	}
 
-	return deviceTypes()
+	return deviceTypes(api)
 		.then(deviceTypes => deviceTypesLib.normalizeDeviceType(deviceTypes, slug))
 		.tap(normalizedSlug => {
 			if (normalizedSlug == null) {
@@ -285,8 +373,12 @@ export const normalizeDeviceType = (slug: string): Promise<string> => {
 		});
 };
 
-export const getImageSize = (slug: string, buildId: string) => {
-	return findDeviceTypeInfoBySlug(slug).then(deviceTypeInfo => {
+export const getImageSize = (
+	slug: string,
+	buildId: string,
+	api: PinejsClient,
+) => {
+	return findDeviceTypeInfoBySlug(slug, api).then(deviceTypeInfo => {
 		const deviceType = deviceTypeInfo.latest.deviceType;
 		const normalizedSlug = deviceType.slug;
 
@@ -322,8 +414,32 @@ export interface ImageVersions {
 	latest: string;
 }
 
-export const getImageVersions = (slug: string): Promise<ImageVersions> => {
-	return findDeviceTypeInfoBySlug(slug).then(deviceTypeInfo => {
+export const getDeviceTypeIdBySlug = (
+	slug: string,
+	api: PinejsClient,
+): Promise<{ id: number; slug: string }> => {
+	return normalizeDeviceType(slug, api)
+		.then(deviceType => {
+			return api.get({
+				resource: 'device_type',
+				options: {
+					$select: ['id', 'slug'],
+					$filter: {
+						slug: deviceType,
+					},
+				},
+			});
+		})
+		.then(([dt]: { id: number; slug: string }[]) => {
+			return dt;
+		});
+};
+
+export const getImageVersions = (
+	slug: string,
+	api: PinejsClient,
+): Promise<ImageVersions> => {
+	return findDeviceTypeInfoBySlug(slug, api).then(deviceTypeInfo => {
 		const deviceType = deviceTypeInfo.latest.deviceType;
 		const normalizedSlug = deviceType.slug;
 
