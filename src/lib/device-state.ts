@@ -4,6 +4,15 @@ import * as semver from 'resin-semver';
 
 import { DEFAULT_SUPERVISOR_POLL_INTERVAL } from './env-vars';
 
+import {
+	Application,
+	Device,
+	Image,
+	getExpanded,
+	Release,
+	PineDeferred,
+	ServiceInstall,
+} from '../models';
 import { PinejsClient } from '../platform';
 
 // Set RESIN_SUPERVISOR_POLL_INTERVAL to a minimum of 10 minutes
@@ -19,22 +28,23 @@ export const setMinPollInterval = (config: AnyObject) => {
 
 export const getReleaseForDevice = (
 	api: PinejsClient,
-	device: AnyObject,
+	device: Device,
 	singleContainer = false,
-): Promise<AnyObject> => {
-	if (device.should_be_running__release[0] != null) {
-		return Promise.resolve(device.should_be_running__release[0]);
+): Promise<Release> => {
+	const release = getExpanded(device.should_be_running__release);
+	if (release != null) {
+		return Promise.resolve(release);
 	} else {
-		const app = device.belongs_to__application[0];
+		const app = getExpanded(device.belongs_to__application)!;
 		return releaseFromApp(api, app, singleContainer);
 	}
 };
 
 export const releaseFromApp = (
 	api: PinejsClient,
-	app: AnyObject,
+	app: Application,
 	singleContainer = false,
-) => {
+): Promise<Release> => {
 	let containsImgObj = {};
 	if (singleContainer) {
 		containsImgObj = { $top: 1 };
@@ -72,25 +82,32 @@ export const releaseFromApp = (
 				},
 			},
 		})
-		.then(([release]: AnyObject[]) => release);
+		.then(([release]: Release[]) => release);
 };
 
 export const serviceInstallFromImage = (
-	device: AnyObject,
-	image?: AnyObject,
-): undefined | AnyObject => {
+	device: Device,
+	image?:
+		| Image
+		| (Pick<Image, Exclude<keyof Image, 'is_a_build_of__service'>> & {
+				is_a_build_of__service: number;
+		  }),
+): ServiceInstall | undefined => {
 	if (image == null) {
 		return;
 	}
 
 	let id: number;
 	if (_.isObject(image.is_a_build_of__service)) {
-		id = image.is_a_build_of__service.__id;
+		id = (image.is_a_build_of__service as PineDeferred).__id;
 	} else {
-		id = image.is_a_build_of__service;
+		id = image.is_a_build_of__service as number;
 	}
 
-	return _.find(device.service_install, si => si.service[0].id === id);
+	return _.find(
+		device.service_install,
+		si => getExpanded(si.service)!.id === id,
+	);
 };
 
 export const formatImageLocation = (imageLocation: string) =>
