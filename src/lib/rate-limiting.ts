@@ -1,11 +1,17 @@
 import * as _express from 'express';
 import * as redis from 'redis';
-import ExpressBruteRedis = require('express-brute-redis');
+import {
+	RateLimiterRedis,
+	RateLimiterCluster,
+	RateLimiterMemory,
+	RateLimiterAbstract,
+	IRateLimiterOptions,
+} from 'rate-limiter-flexible';
 import * as Promise from 'bluebird';
 
-import * as ExpressBrute from 'express-brute';
+import { isMaster } from 'cluster';
+
 import * as _ from 'lodash';
-import { FacadeStore } from './facade-store';
 import { captureException } from '../platform/errors';
 import {
 	RATE_LIMIT_MEMORY_BACKEND,
@@ -21,16 +27,6 @@ const logRedisError = (err: Error) => {
 	captureException(err, 'Error: Redis service communication failed ');
 };
 
-interface StoreErrorOptions {
-	message: string;
-	parent: any;
-	next: _express.NextFunction;
-}
-
-interface ExpressBruteRedisOpts extends redis.ClientOpts {
-	client?: redis.RedisClient;
-}
-
 /*
  Retry to connect to the redis server every 200 ms. To allow recovering
  in case the redis server goes offline and comes online again.
@@ -38,9 +34,26 @@ interface ExpressBruteRedisOpts extends redis.ClientOpts {
 const redisRetryStrategy: redis.RetryStrategy = _.constant(200);
 
 // Use redis as a store.
-const getStore = _.once(() => {
+const getStore = (opts: IRateLimiterOptions) => {
+	let insuranceLimiter;
+	if (isMaster) {
+		insuranceLimiter = new RateLimiterMemory({
+			// TODO: points should probably be modifiable for the cluster fallback, ie divide by total instances in prod, RATE_LIMIT_FACTOR???
+			...opts,
+			keyPrefix: 'myclusterlimiter', // Must be unique for each limiter
+		});
+	} else {
+		insuranceLimiter = new RateLimiterCluster({
+			// TODO: points should probably be modifiable for the cluster fallback, ie divide by total instances in prod, RATE_LIMIT_FACTOR???
+			...opts,
+			keyPrefix: 'myclusterlimiter', // Must be unique for each limiter
+			timeoutMs: 3000, // Promise is rejected, if master doesn't answer for 3 secs
+			storeClient: undefined,
+		});
+	}
+
 	if (RATE_LIMIT_MEMORY_BACKEND != null) {
-		return new ExpressBrute.MemoryStore();
+		return insuranceLimiter;
 	}
 
 	const client = redis.createClient({
@@ -54,29 +67,20 @@ const getStore = _.once(() => {
 	// the whole process
 	client.on('error', _.throttle(logRedisError, 300000));
 
-	const opts: ExpressBruteRedisOpts = {
-		client,
-		prefix: 'api:ratelimiting:',
-	};
+	// const opts: ExpressBruteRedisOpts = {
+	// 	client,
+	// 	prefix: 'api:ratelimiting:',
+	// };
 
-	const redisStore = new ExpressBruteRedis(opts);
-	return new FacadeStore(redisStore);
-});
-
-// If redis system is not working, we bypass the rate limiting, to not
-// block the functionality of the API.
-const redisErrorHandler = (options: StoreErrorOptions) => {
-	options.next();
-};
-
-const failDebug: ExpressBrute.FailTooManyRequests = (
-	req,
-	res,
-	next,
-	nextValidRequestDate,
-) => {
-	console.error('Blocked by rate limiting: ' + req.originalUrl);
-	ExpressBrute.FailTooManyRequests(req, res, next, nextValidRequestDate);
+	// const redisStore = new ExpressBruteRedis(opts);
+	return new RateLimiterRedis({
+		...opts,
+		storeClient: client,
+		// TODO: Fix these args
+		inmemoryBlockOnConsumed: 301, // If userId or IP consume >=301 points per minute
+		inmemoryBlockDuration: 60, // Block it for a minute in memory, so no requests go to Redis
+		insuranceLimiter,
+	});
 };
 
 export const SECONDS = 1000;
@@ -106,27 +110,19 @@ export const resetCounter = (req: _express.Request): Promise<void> => {
 };
 
 export type PartialRateLimitMiddleware = (
-	field?:
-		| string
-		| ((req: _express.Request, res: _express.Response) => Promise<string>),
+	field?: string | ((req: _express.Request, res: _express.Response) => string),
 ) => _express.RequestHandler;
 
 export const createRateLimitMiddleware = (
-	expressBruteOpts: ExpressBrute.Options,
-	expressBruteMiddleware: Partial<ExpressBrute.Middleware> = {},
+	opts: IRateLimiterOptions,
+	keyOpts: Parameters<typeof $createRateLimitMiddleware>[1] = {},
 ): PartialRateLimitMiddleware => {
-	expressBruteOpts.handleStoreError = redisErrorHandler;
-	expressBruteOpts.failCallback = failDebug;
-	if (expressBruteOpts.freeRetries !== undefined) {
-		expressBruteOpts.freeRetries *= RATE_LIMIT_FACTOR;
+	if (opts.points != null) {
+		opts.points *= RATE_LIMIT_FACTOR;
 	}
-	const expressBrute = new ExpressBrute(getStore(), expressBruteOpts);
+	const store = getStore(opts);
 
-	return _.partial(
-		$createRateLimitMiddleware,
-		expressBrute,
-		expressBruteMiddleware,
-	);
+	return _.partial($createRateLimitMiddleware, store, keyOpts);
 };
 
 // If 'field' is set, the middleware will apply the rate limit to requests
@@ -135,35 +131,35 @@ export const createRateLimitMiddleware = (
 // If 'field' is not set, the rate limit will be applied to *all* requests
 // originating from a particular IP.
 const $createRateLimitMiddleware = (
-	expressBrute: ExpressBrute,
-	expressBruteMiddleware: ExpressBrute.Middleware,
-	field?:
-		| string
-		| ((req: _express.Request, res: _express.Response) => Promise<string>),
+	rateLimiter: RateLimiterAbstract,
+	{ ignoreIP = false }: { ignoreIP?: boolean } = {},
+	field?: string | ((req: _express.Request, res: _express.Response) => string),
 ): _express.RequestHandler => {
-	if (expressBrute == null) {
-		throw new Error(
-			'expressBrute object is required to create rate limit middleware',
-		);
-	}
-
+	let fieldFn: (req: _express.Request, res: _express.Response) => string;
 	if (field != null) {
-		let keyFn: _express.Handler;
 		if (_.isFunction(field)) {
-			keyFn = (req, res, next) => {
-				field(req, res)
-					.catch(_.noop)
-					.then(next);
-			};
+			fieldFn = field;
 		} else {
 			const path = _.toPath(field);
-			keyFn = (req, _res, next) => {
-				next(_.get(req, path));
-			};
+			fieldFn = req => _.get(req, path);
 		}
-		expressBruteMiddleware.key = keyFn;
-		return expressBrute.getMiddleware(expressBruteMiddleware);
 	} else {
-		return expressBrute.prevent;
+		fieldFn = _.constant('');
 	}
+	let keyFn: (req: _express.Request, res: _express.Response) => string;
+	if (ignoreIP) {
+		keyFn = fieldFn;
+	} else {
+		keyFn = (req, res) => req.ip + '$' + fieldFn(req, res);
+	}
+	return (req, res, next) => {
+		rateLimiter
+			.consume(keyFn(req, res))
+			.then(() => {
+				next();
+			})
+			.catch(() => {
+				res.status(429).send('Too Many Requests');
+			});
+	};
 };

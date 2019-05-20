@@ -2,6 +2,10 @@ const numWorkers = process.env.NUM_WORKERS || require('os').cpus().length;
 if (numWorkers > 1) {
 	const cluster = require('cluster');
 	if (cluster.isMaster) {
+		// Setup the RateLimiterCluster store on the master worker
+		const { RateLimiterCluster } = require('rate-limiter-flexible');
+		new RateLimiterCluster();
+
 		console.log(`Forking ${numWorkers} workers`);
 		for (let i = 0; i < numWorkers; i++) {
 			console.log(`Forking worker ${i}`);
