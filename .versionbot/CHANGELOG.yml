@@ -1,4 +1,17 @@
 - commits:
+    - subject: Revert "Add an entry for the supervisor mixpanel controlling var"
+      hash: 58252e7af1cb9ebad2ddade6613e93b016be75f5
+      body: |
+        This reverts commit 55a2cc0df5664fdfaafe710943de673b191df5df.
+      footer:
+        Change-type: patch
+        change-type: patch
+        Signed-off-by: Cameron Diver <cameron@balena.io>
+        signed-off-by: Cameron Diver <cameron@balena.io>
+      author: Cameron Diver
+  version: 0.24.4
+  date: 2019-06-11T06:49:58.732Z
+- commits:
     - subject: Update open-balena-base to 7.2.1
       hash: 89307def86db669729b58c6efad92e753931ed8f
       body: |
