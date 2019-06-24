@@ -55,6 +55,11 @@ Fact type: user has permission
 	Fact type: user permission has expiry date
 		Necessity: Each user permission has at most one expiry date.
 
+Term: public key
+	Concept Type: Text (Type)
+Fact type: user (Auth) has public key
+	Term Form: user public key
+
 Term: api key
 	Reference Scheme: key
 Fact type: api key has key
