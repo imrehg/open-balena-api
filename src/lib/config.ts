@@ -59,6 +59,10 @@ export function intVar<R>(varName: string, defaultValue?: R): number | R {
 }
 
 export const API_HOST = requiredVar('API_HOST');
+export const API_HEARTBEAT_STATE_TIMEOUT_SECONDS = intVar(
+	'API_HEARTBEAT_STATE_TIMEOUT_SECONDS',
+	15,
+);
 export const API_VPN_SERVICE_API_KEY = requiredVar('API_VPN_SERVICE_API_KEY');
 export const AUTH_RESINOS_REGISTRY_CODE =
 	process.env.AUTH_RESINOS_REGISTRY_CODE;

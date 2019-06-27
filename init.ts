@@ -19,6 +19,13 @@ async function onInitModel() {
 		.transaction(tx =>
 			updateOrInsertModel('application_type', filter, insert, tx),
 		)
+		.then(() =>
+			db.transaction(tx =>
+				tx.executeSql(
+					'ALTER TABLE "device" ALTER COLUMN "api heartbeat state" SET DEFAULT -2;',
+				),
+			),
+		)
 		.return();
 }
 

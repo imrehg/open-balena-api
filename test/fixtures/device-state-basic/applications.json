@@ -1,0 +1,8 @@
+{
+	"app1": {
+		"app_name": "device_state_test_app",
+		"device_type": "raspberry-pi",
+		"commit": "deadbeef",
+		"should_track_latest_release": 1
+	}
+}
