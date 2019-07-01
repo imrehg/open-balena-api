@@ -1,4 +1,25 @@
 - commits:
+    - subject: 'feature: Add API Heartbeat State'
+      hash: 277293a5b887a776d602a05c08e82275df80fd47
+      body: ''
+      footer:
+        Change-type: patch
+        change-type: patch
+        Signed-off-by: Rich Bayliss <rich@balena.io>
+        signed-off-by: Rich Bayliss <rich@balena.io>
+      author: Rich Bayliss
+    - subject: 'tests: Add fixtures framework'
+      hash: 36eed5a6363242365eb4bd87670439cc5ddb8051
+      body: ''
+      footer:
+        Change-type: patch
+        change-type: patch
+        Signed-off-by: Rich Bayliss <rich@balena.io>
+        signed-off-by: Rich Bayliss <rich@balena.io>
+      author: Rich Bayliss
+  version: 0.27.8
+  date: 2019-07-01T08:41:11.078Z
+- commits:
     - subject: Block removal of the currently deployed release in isolation
       hash: c1e2a8bacef3581a011c8d56070fc2f466b9f341
       body: |
