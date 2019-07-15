@@ -1,4 +1,63 @@
 - commits:
+    - subject: 'perms: grant user api keys perms to CRUD public keys'
+      hash: c68c169e2b91da8a6fae49caf9df9628314f476b
+      body: ''
+      footer:
+        Change-type: minor
+        change-type: minor
+        Signed-off-by: Will Boyce <will@balena.io>
+        signed-off-by: Will Boyce <will@balena.io>
+      author: Will Boyce
+    - subject: 'perms: grant `device-api-key` ability to lookup user public keys'
+      hash: 6dd5f1bcfd7a48c45720264b601b9f82be75d620
+      body: ''
+      footer:
+        Change-type: minor
+        change-type: minor
+        Signed-off-by: Will Boyce <will@balena.io>
+        signed-off-by: Will Boyce <will@balena.io>
+      author: Will Boyce
+    - subject: 'migration: rename root user to admin'
+      hash: 8a665694fd2a5488195f7a8ef29dc0e144287395
+      body: ''
+      footer:
+        Change-type: minor
+        change-type: minor
+        Signed-off-by: Will Boyce <will@balena.io>
+        signed-off-by: Will Boyce <will@balena.io>
+      author: Will Boyce
+    - subject: 'auth: check username blacklist when registering new users'
+      hash: e35a17d03e35e3aefec06341dfc65d8f264d24df
+      body: ''
+      footer:
+        Connects-to: '#120'
+        connects-to: '#120'
+        Change-type: minor
+        change-type: minor
+        Signed-off-by: Will Boyce <will@balena.io>
+        signed-off-by: Will Boyce <will@balena.io>
+      author: Will Boyce
+    - subject: 'auth: add `auth/v1/public-keys/:username endpoint for devices ssh auth'
+      hash: b39188b0963e483ec4a482cd71a3b7c9d7df8e97
+      body: ''
+      footer:
+        Change-type: minor
+        change-type: minor
+        Signed-off-by: Will Boyce <will@balena.io>
+        signed-off-by: Will Boyce <will@balena.io>
+      author: Will Boyce
+    - subject: 'sbrv: add user public keys'
+      hash: 9759ab34affcc34098927bdac0e94453da5a5f43
+      body: ''
+      footer:
+        Change-type: minor
+        change-type: minor
+        Signed-off-by: Will Boyce <will@balena.io>
+        signed-off-by: Will Boyce <will@balena.io>
+      author: Will Boyce
+  version: 0.29.0
+  date: 2019-07-15T19:30:12.350Z
+- commits:
     - subject: Fix key comparison
       hash: e4b41461720f01177bad99f430c144bb7b4b7aad
       body: ''
