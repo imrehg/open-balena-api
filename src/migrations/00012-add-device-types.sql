@@ -28,10 +28,10 @@ END $$;
 INSERT INTO "device type" ("slug", "name")
 	SELECT "dt" as "slug", "dt" as "name" FROM
 	(
-		select DISTINCT dt FROM
+		select dt FROM
 		(
 			SELECT DISTINCT lower("device type") as "dt" FROM "device"
-			UNION ALL
+			UNION
 			SELECT DISTINCT lower("device type") as "dt" FROM "application"
 		) as DT_TABLE
 	) as FULL_DT;
