@@ -54,7 +54,7 @@ const syncSettings: { map: Dictionary<string> } = {
 	map: {},
 };
 
-export function setSyncMap(map: Dictionary<string>) {
+export function setSyncMap(map: typeof syncSettings['map']) {
 	syncSettings.map = map;
 }
 
@@ -201,12 +201,11 @@ export function syncDataModel(
 	propertyMap: Dictionary<string>,
 ) {
 	return db.transaction(tx => {
-		return Promise.each(_.map(types), deviceTypeInfo => {
+		return Promise.each(Object.values(types), deviceTypeInfo => {
 			const deviceType = deviceTypeInfo.latest.deviceType;
-			const body: AnyObject = {};
-			_.forEach(propertyMap, (target, source) => {
-				body[target] = (deviceType as AnyObject)[source];
-			});
+			const body = _(propertyMap)
+				.invert()
+				.mapValues(source => (deviceType as AnyObject)[source]);
 			return updateOrInsertModel(
 				'device_type',
 				{
@@ -267,13 +266,9 @@ export const getAccessibleSlugs = (
 	const options: AnyObject = {
 		$select: ['slug'],
 	};
-	if (slugs && slugs.length > 1) {
+	if (slugs) {
 		options['$filter'] = {
-			$in: { slug: slugs },
-		};
-	} else if (slugs && slugs.length == 1) {
-		options['$filter'] = {
-			slug: slugs[0],
+			slug: { $in: slugs },
 		};
 	}
 	return api
@@ -292,11 +287,9 @@ export const findDeviceTypeInfoBySlug = (
 ): Promise<DeviceTypeInfo> =>
 	getAccessibleSlugs(api, [slug])
 		.then((accessibleDeviceTypes: string[]) => {
-			if (accessibleDeviceTypes.length > 0) {
-				if (_.includes(accessibleDeviceTypes, slug)) {
-					// We can access the device type slug
-					return;
-				}
+			if (_.includes(accessibleDeviceTypes, slug)) {
+				// We can access the device type slug
+				return;
 			}
 			// We cannot access the device type
 			throw new UnknownDeviceTypeError(slug);
@@ -311,7 +304,6 @@ export const findDeviceTypeInfoBySlug = (
 			}
 			return deviceTypeInfos[slug];
 		});
-// TODO: filter device to be accessible for req
 
 export const validateSlug = (slug?: string) => {
 	if (slug == null || !/^[\w-]+$/.test(slug)) {

@@ -79,32 +79,27 @@ sbvrUtils.addPureHook('POST', 'resin', 'application', {
 			throw new Error('App name may only contain [a-zA-Z0-9_-].');
 		}
 
-		const promises: AnyObject[] = [];
-		if (
-			request.values.device_type != null &&
-			request.values.is_for__device_type == null
-		) {
-			// translate device_type to is_for__device_type
-			promises.push(
-				deviceTypes
+		return Promise.try(() => {
+			if (
+				request.values.device_type != null &&
+				request.values.is_for__device_type == null
+			) {
+				// translate device_type to is_for__device_type
+				return deviceTypes
 					.getDeviceTypeIdBySlug(request.values.device_type, api)
 					.then(dt => {
-						if (dt) {
-							request.values.is_for__device_type = dt.id;
-							return;
+						if (!dt) {
+							throw new Error('Invalid device type value');
 						}
-						throw new Error('Invalid device type value');
-					}),
-			);
-		}
-
-		const resolveDeviceTypePromise = Promise.all(promises)
+						request.values.is_for__device_type = dt.id;
+					});
+			}
+		})
 			.then(() => {
 				if (!request.values.is_for__device_type) {
 					throw new Error('No device type specified for application');
 				}
-			})
-			.then(() => {
+
 				return api.get({
 					resource: 'device_type',
 					id: request.values.is_for__device_type,
@@ -118,12 +113,7 @@ sbvrUtils.addPureHook('POST', 'resin', 'application', {
 					throw new deviceTypes.UnknownDeviceTypeError('');
 				}
 				return deviceTypes.findBySlug(dt.slug, api);
-			});
-
-		return Promise.all([
-			resolveDeviceTypePromise,
-			checkDependentApplication(args),
-		])
+			})
 			.then(() => {
 				request.values.VPN_host = VPN_HOST;
 				request.values.VPN_port = VPN_PORT;

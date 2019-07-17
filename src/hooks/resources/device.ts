@@ -128,8 +128,6 @@ sbvrUtils.addPureHook('POST', 'resin', 'device', {
 	POSTPARSE: args => {
 		const { request, api } = args;
 
-		const waitPromises = [];
-
 		// Check for extra whitespace characters
 		if (
 			request.values.device_name != null &&
@@ -142,42 +140,6 @@ sbvrUtils.addPureHook('POST', 'resin', 'device', {
 		// Keep the app ID for later -- we'll need it in the POSTRUN hook
 		request.custom.appId = request.values.belongs_to__application;
 
-		let resolveDT;
-		if (
-			request.values.device_type != null &&
-			request.values.is_of__device_type == null
-		) {
-			// translate device_type to is_for__device_type
-			resolveDT = deviceTypes
-				.getDeviceTypeIdBySlug(request.values.device_type, api)
-				.then(dt => {
-					if (dt) {
-						request.values.is_of__device_type = dt.id;
-						return;
-					}
-					throw new Error('Invalid device type value');
-				});
-		}
-
-		waitPromises.push(
-			Promise.resolve(resolveDT)
-				.then(() => {
-					return api.get({
-						resource: 'device_type',
-						id: request.values.is_of__device_type,
-						options: {
-							$select: ['slug'],
-						},
-					});
-				})
-				.then((dt: { slug: string }) => {
-					if (!dt) {
-						throw new deviceTypes.UnknownDeviceTypeError('');
-					}
-					return deviceTypes.findBySlug(dt.slug, api);
-				}),
-		);
-
 		request.values.device_name =
 			request.values.device_name || haikuName.generate();
 		request.values.uuid =
@@ -188,7 +150,39 @@ sbvrUtils.addPureHook('POST', 'resin', 'device', {
 				'Device UUID must be a 32 or 62 character long lower case hex string.',
 			);
 		}
-		return Promise.all(waitPromises);
+
+		return Promise.try(() => {
+			if (
+				request.values.device_type != null &&
+				request.values.is_of__device_type == null
+			) {
+				// translate device_type to is_for__device_type
+				return deviceTypes
+					.getDeviceTypeIdBySlug(request.values.device_type, api)
+					.then(dt => {
+						if (dt) {
+							request.values.is_of__device_type = dt.id;
+							return;
+						}
+						throw new Error('Invalid device type value');
+					});
+			}
+		})
+			.then(() => {
+				return api.get({
+					resource: 'device_type',
+					id: request.values.is_of__device_type,
+					options: {
+						$select: ['slug'],
+					},
+				});
+			})
+			.then((dt: { slug: string }) => {
+				if (!dt) {
+					throw new deviceTypes.UnknownDeviceTypeError('');
+				}
+				return deviceTypes.findBySlug(dt.slug, api);
+			});
 	},
 	POSTRUN: ({ request, api, tx, result: deviceId }) => {
 		// Don't try to add service installs if the device wasn't created

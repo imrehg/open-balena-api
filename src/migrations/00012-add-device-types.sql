@@ -8,21 +8,6 @@ CREATE TABLE IF NOT EXISTS "device type" (
 ,	"name" VARCHAR(255) NOT NULL
 );
 
-DO $$
-	BEGIN
-		IF NOT EXISTS(
-			SELECT 1
-			FROM "information_schema"."triggers"
-			WHERE "event_object_table" = 'device type'
-			AND "trigger_name" = 'device type_trigger_update_modified_at'
-		) THEN
-			CREATE TRIGGER "device type_trigger_update_modified_at"
-			BEFORE UPDATE ON "device type"
-			FOR EACH ROW
-			EXECUTE PROCEDURE "trigger_update_modified_at"();
-		END IF;
-END $$;
-
 -- populate device types table
 
 INSERT INTO "device type" ("slug", "name")
@@ -30,9 +15,9 @@ INSERT INTO "device type" ("slug", "name")
 	(
 		select dt FROM
 		(
-			SELECT DISTINCT lower("device type") as "dt" FROM "device"
+			SELECT lower("device type") as "dt" FROM "device"
 			UNION
-			SELECT DISTINCT lower("device type") as "dt" FROM "application"
+			SELECT lower("device type") as "dt" FROM "application"
 		) as DT_TABLE
 	) as FULL_DT;
 

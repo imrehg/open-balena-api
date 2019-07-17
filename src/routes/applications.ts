@@ -57,7 +57,6 @@ export const downloadImageConfig: RequestHandler = (req, res) => {
 	const api = resinApi.clone({ passthrough: { req } });
 
 	return getApp(req)
-		.tap(app => console.error(`Found app! ${JSON.stringify(app)}`))
 		.then(app =>
 			findBySlug(deviceTypeSlug || app.is_for__device_type[0].slug, api).then(
 				deviceType => generateConfig(req, app, deviceType, osVersion),
