@@ -114,6 +114,9 @@ const checkApiKeyBelongsToDevice = (
 		.catchReturn(false);
 
 const parseScope = (req: Request, scope: string): Scope | undefined => {
+	console.log('req.query.scope', req.query.scope);
+	console.log('scopes', scope);
+
 	try {
 		if (!scope) {
 			return;
